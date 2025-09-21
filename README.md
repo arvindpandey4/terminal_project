@@ -4,6 +4,8 @@ A modern, feature-rich terminal emulator built with Python Flask and JavaScript,
 
 ## 🚀 Features
 
+LIVE DEMO = python-terminal.vercel.app
+
 - **Interactive Terminal Interface**
   - Real-time command execution
   - Command history navigation
