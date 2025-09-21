@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terminal Project</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Custom theme configuration -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        // Dark theme (default)
+                        'terminal-bg': '#1a1a1a',
+                        'terminal-text': '#f0f0f0',
+                        'terminal-prompt': '#50fa7b',
+                        'terminal-cursor': '#f8f8f2',
+                        'terminal-selection': 'rgba(255, 255, 255, 0.2)',
+                        'terminal-header': '#282a36',
+                        'terminal-border': '#44475a',
+                        
+                        // Light theme
+                        'light-terminal-bg': '#f0f0f0',
+                        'light-terminal-text': '#2c3e50',
+                        'light-terminal-prompt': '#27ae60',
+                        'light-terminal-cursor': '#2c3e50',
+                        'light-terminal-selection': 'rgba(0, 0, 0, 0.1)',
+                        'light-terminal-header': '#ecf0f1',
+                        'light-terminal-border': '#bdc3c7',
+                        
+                        // Solarized theme
+                        'solarized-terminal-bg': '#002b36',
+                        'solarized-terminal-text': '#839496',
+                        'solarized-terminal-prompt': '#859900',
+                        'solarized-terminal-cursor': '#93a1a1',
+                        'solarized-terminal-selection': 'rgba(147, 161, 161, 0.3)',
+                        'solarized-terminal-header': '#073642',
+                        'solarized-terminal-border': '#586e75',
+                    }
+                }
+            }
+        };
+    </script>
+    
+    <!-- Custom styles -->
+    <style>
+        :root {
+            /* Dark theme */
+            --terminal-bg: #1a1a1a;
+            --terminal-text: #f0f0f0;
+            --terminal-prompt: #50fa7b;
+            
+            /* Light theme */
+            --light-terminal-bg: #f0f0f0;
+            --light-terminal-text: #2c3e50;
+            --light-terminal-prompt: #27ae60;
+            
+            /* Solarized theme */
+            --solarized-terminal-bg: #002b36;
+            --solarized-terminal-text: #839496;
+            --solarized-terminal-prompt: #859900;
+        }
+
+        /* Theme transitions */
+        .theme-transition {
+            transition: all 0.3s ease;
+        }
+        
+        /* Terminal text styling */
+        .terminal-text {
+            font-family: 'Courier New', monospace;
+            line-height: 1.2;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        
+        /* Typewriter animation */
+        @keyframes typing {
+            from { width: 0 }
+            to { width: 100% }
+        }
+        
+        .typing-animation {
+            overflow: hidden;
+            border-right: 2px solid;
+            white-space: nowrap;
+            animation: 
+                typing 1s steps(30, end),
+                blink-caret .5s step-end infinite alternate;
+        }
+        
+        @keyframes blink-caret {
+            from, to { border-color: transparent }
+            50% { border-color: currentColor }
+        }
+        
+        /* Scrollbar styling */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.1);
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        /* Dashboard gauge styling */
+        .gauge {
+            position: relative;
+            height: 40px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .gauge-fill {
+            height: 100%;
+            transition: width 0.5s ease-in-out;
+        }
+        
+        /* Tab styling */
+        .tab-active {
+            border-bottom: 2px solid;
+        }
+    </style>
+</head>
+
+<body class="bg-terminal-bg text-terminal-text dark theme-dark theme-transition min-h-screen flex flex-col">
+    <!-- Header with title and controls -->
+    <header class="bg-terminal-header p-2 border-b border-terminal-border flex justify-between items-center">
+        <div class="flex items-center">
+            <h1 class="text-xl font-bold mr-4">Terminal Project</h1>
+            <div class="flex space-x-2">
+                <button id="theme-toggle" class="px-2 py-1 rounded bg-terminal-border hover:bg-opacity-80">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    </svg>
+                </button>
+                <button id="export-logs" class="px-2 py-1 rounded bg-terminal-border hover:bg-opacity-80 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Export Logs
+                </button>
+            </div>
+        </div>
+        <div class="flex items-center space-x-4">
+            <div id="theme-selector" class="flex space-x-2">
+                <button data-theme="dark" class="px-2 py-1 rounded bg-terminal-border hover:bg-opacity-80 theme-active">Dark</button>
+                <button data-theme="light" class="px-2 py-1 rounded bg-terminal-border hover:bg-opacity-80">Light</button>
+                <button data-theme="solarized" class="px-2 py-1 rounded bg-terminal-border hover:bg-opacity-80">Solarized</button>
+            </div>
+        </div>
+    </header>
+    
+    <!-- Main content area -->
+    <div class="flex flex-1 overflow-hidden">
+        <!-- Left sidebar with quick commands -->
+        <div id="quick-commands-panel" class="w-48 border-r border-terminal-border p-2 flex flex-col theme-transition">
+            <h3 class="text-sm font-semibold mb-2">Quick Commands</h3>
+            <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="mkdir new_folder">Create Folder</button>
+            <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="ls">List Files</button>
+            <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="clear">Clear Terminal</button>
+            <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="pwd">Current Path</button>
+            <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="top -n 1">CPU Info</button>
+            <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="free -h">Memory Info</button>
+            <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="ps aux">List Processes</button>
+            <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="help">Help</button>
+        </div>
+        
+        <!-- Main terminal area -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- System dashboard -->
+            <div id="system-dashboard" class="p-2 border-b border-terminal-border theme-transition">
+                <div class="flex space-x-4">
+                    <div class="flex-1">
+                        <div class="text-xs mb-1">CPU Usage</div>
+                        <div class="gauge">
+                            <div id="cpu-gauge" class="gauge-fill bg-terminal-prompt" style="width: 0%"></div>
+                        </div>
+                        <div id="cpu-text" class="text-xs mt-1 text-right">0%</div>
+                    </div>
+                    <div class="flex-1">
+                        <div class="text-xs mb-1">Memory Usage</div>
+                        <div class="gauge">
+                            <div id="memory-gauge" class="gauge-fill bg-blue-500" style="width: 0%"></div>
+                        </div>
+                        <div id="memory-text" class="text-xs mt-1 text-right">0%</div>
+                    </div>
+                    <div class="w-32">
+                        <div class="text-xs mb-1">Processes</div>
+                        <div id="process-count" class="text-lg font-mono text-center">0</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Terminal tabs and content -->
+            <div class="flex-1 flex flex-col overflow-hidden">
+                <!-- Terminal tabs -->
+                <div id="terminal-tabs" class="flex border-b border-terminal-border theme-transition">
+                    <div class="tab tab-active px-4 py-2 cursor-pointer" data-tab-id="default">Terminal 1</div>
+                    <button id="new-tab-btn" class="px-2 py-1 ml-2 my-1 rounded bg-terminal-border hover:bg-opacity-80">+</button>
+                </div>
+                
+                <!-- Terminal content area -->
+                <div id="terminal-content" class="flex-1 overflow-hidden">
+                    <div id="terminal-default" class="terminal-container h-full flex flex-col">
+                        <div class="terminal-output flex-1 p-2 overflow-y-auto custom-scrollbar terminal-text"></div>
+                        <div class="terminal-input-area flex items-center p-2 border-t border-terminal-border theme-transition">
+                            <span class="terminal-prompt mr-2">$</span>
+                            <input type="text" class="terminal-input flex-1 bg-transparent border-none outline-none terminal-text" autocomplete="off" spellcheck="false">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- JavaScript -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="/static/js/terminal.js"></script>
+</body>
+</html>
