@@ -40,8 +40,8 @@ app = Flask(__name__,
             template_folder='ui/templates')
 app.config['SECRET_KEY'] = 'terminal_project_secret_key'
 
-# Initialize Socket.IO
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Initialize Socket.IO with async mode
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 # Current working directory for terminal commands (per tab)
 TAB_DIRECTORIES = {}
@@ -180,5 +180,9 @@ def start_system_monitor():
     
     socketio.start_background_task(emit_system_info)
 
+# Export the app for Vercel
+application = app
+
 if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    socketio.run(app, host='0.0.0.0', port=port)
