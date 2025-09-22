@@ -10,6 +10,7 @@ import subprocess
 import platform
 import re
 import psutil
+import time
 from difflib import get_close_matches
 
 # Dictionary of available commands and their descriptions
@@ -42,101 +43,117 @@ AVAILABLE_COMMANDS = {
 def execute_command(command, current_dir):
     """
     Execute a terminal command and return the output.
-    
+
     Args:
         command (str): The command to execute
         current_dir (str): The current working directory
-        
+
     Returns:
         dict: A dictionary containing the command output and optionally a new directory
     """
+    # Handle empty command
+    if not command or command.strip() == "":
+        return {
+            'output': '',
+            'new_dir': None
+        }
+    
     # Split the command into parts
     parts = command.split()
     cmd = parts[0].lower() if parts else ""
     args = parts[1:] if len(parts) > 1 else []
-    
+
     result = {
         'output': '',
         'new_dir': None
     }
-    
+
     try:
         # Handle built-in commands
         if cmd == 'ls' or (cmd == 'dir' and platform.system() == 'Windows'):
             result['output'] = handle_ls(args, current_dir)
-        
+
         elif cmd == 'cd':
             new_dir = handle_cd(args, current_dir)
             result['output'] = f"Changed directory to: {new_dir}"
             result['new_dir'] = new_dir
-        
+
         elif cmd == 'pwd':
-            result['output'] = current_dir
-        
+            result['output'] = handle_pwd(current_dir)
+
         elif cmd == 'mkdir':
             result['output'] = handle_mkdir(args, current_dir)
-        
+
         elif cmd == 'rmdir':
             result['output'] = handle_rmdir(args, current_dir)
-        
+
         elif cmd == 'rm':
             result['output'] = handle_rm(args, current_dir)
-        
+
         elif cmd == 'cp':
             result['output'] = handle_cp(args, current_dir)
-        
+
         elif cmd == 'mv':
             result['output'] = handle_mv(args, current_dir)
-        
+
         elif cmd == 'cat':
             result['output'] = handle_cat(args, current_dir)
-        
+
         elif cmd == 'echo':
-            result['output'] = ' '.join(args)
-        
+            result['output'] = handle_echo(args)
+
         elif cmd == 'touch':
             result['output'] = handle_touch(args, current_dir)
-        
+
         elif cmd == 'grep':
             result['output'] = handle_grep(args, current_dir)
-        
+
         elif cmd == 'find':
             result['output'] = handle_find(args, current_dir)
-        
+
         elif cmd == 'ps':
             result['output'] = handle_ps()
-        
+
         elif cmd == 'top':
             result['output'] = handle_top()
-        
+
         elif cmd == 'clear':
-            result['output'] = '\n' * 50  # Simulate clearing the screen
-        
+            result['output'] = handle_clear()
+
+        elif cmd == 'test':
+            result['output'] = "Test command working! The output system is functional."
+
         elif cmd == 'help':
             result['output'] = handle_help(args)
-        
+
         elif cmd == 'exit':
-            result['output'] = "Exiting terminal..."
-        
+            result['output'] = handle_exit()
+
         elif cmd == 'cpu':
             result['output'] = handle_cpu_info()
-        
+
         elif cmd == 'memory':
             result['output'] = handle_memory_info()
-        
+
         elif cmd == 'processes':
             result['output'] = handle_process_list()
-        
+
         else:
             # Try to find similar commands for suggestions
             suggestions = get_close_matches(cmd, AVAILABLE_COMMANDS.keys(), n=3, cutoff=0.6)
-            
+
             if suggestions:
                 suggestion_text = f"Command '{cmd}' not found. Did you mean: {', '.join(suggestions)}?"
                 result['output'] = suggestion_text
             else:
                 # If no built-in command matches, try to execute as a system command
                 try:
+                    # Check for potentially dangerous commands
+                    dangerous_commands = ['rm -rf /', 'rm -rf /*', 'dd', 'mkfs', 'format']
+                    if any(dangerous_cmd in command.lower() for dangerous_cmd in dangerous_commands):
+                        result['output'] = f"Error: Potentially dangerous command '{command}' blocked for safety reasons."
+                        return result
+                    
                     # Use subprocess to execute the command
                     process = subprocess.Popen(
                         command,
@@ -147,54 +164,112 @@ def execute_command(command, current_dir):
                         universal_newlines=True
                     )
                     stdout, stderr = process.communicate(timeout=10)
-                    
+
                     if stderr:
-                        result['output'] = stderr
+                        result['output'] = stderr.strip()
                     else:
-                        result['output'] = stdout
+                        result['output'] = stdout.strip() if stdout.strip() else "(Command executed successfully with no output)"
                 except subprocess.TimeoutExpired:
                     result['output'] = "Command timed out after 10 seconds"
                 except Exception as e:
                     result['output'] = f"Command '{cmd}' not found or could not be executed: {str(e)}"
-    
+
     except Exception as e:
         result['output'] = f"Error executing command: {str(e)}"
-    
+
+    # Ensure output is never empty for successful commands
+    if not result['output'] and cmd in ['ls', 'pwd', 'help', 'echo']:
+        if cmd == 'ls':
+            result['output'] = "(empty directory)"
+        elif cmd == 'pwd':
+            result['output'] = current_dir
+        elif cmd == 'help':
+            result['output'] = "Type 'help' for available commands"
+        elif cmd == 'echo':
+            result['output'] = ""
+
     return result
 
 def handle_ls(args, current_dir):
     """Handle ls command."""
-    path = current_dir
-    
-    # Check for path argument
-    if args and not args[0].startswith('-'):
-        if os.path.isabs(args[0]):
-            path = args[0]
-        else:
-            path = os.path.join(current_dir, args[0])
-    
-    # Check if path exists
-    if not os.path.exists(path):
-        return f"ls: cannot access '{args[0]}': No such file or directory"
-    
-    # Get list of files and directories
     try:
+        path = current_dir
+        show_hidden = False
+        long_format = False
+        
+        # Parse arguments
+        for arg in args:
+            if arg.startswith('-'):
+                if 'a' in arg:
+                    show_hidden = True
+                if 'l' in arg:
+                    long_format = True
+            else:
+                if os.path.isabs(arg):
+                    path = arg
+                else:
+                    path = os.path.join(current_dir, arg)
+
+        # Check if path exists
+        if not os.path.exists(path):
+            return f"ls: cannot access '{args[-1] if args and not args[-1].startswith('-') else path}': No such file or directory"
+
+        # Get list of files and directories
         items = os.listdir(path)
         
+        # Filter hidden files if not showing them
+        if not show_hidden:
+            items = [item for item in items if not item.startswith('.')]
+
+        if not items:
+            return "(empty directory)"
+
         # Format output
-        output = []
-        for item in sorted(items):
-            item_path = os.path.join(path, item)
-            if os.path.isdir(item_path):
-                output.append(f"\033[1;34m{item}/\033[0m")  # Blue for directories
-            elif os.access(item_path, os.X_OK):
-                output.append(f"\033[1;32m{item}*\033[0m")  # Green for executables
-            else:
-                output.append(item)
-        
-        return "  ".join(output)
+        if long_format:
+            output = []
+            for item in sorted(items):
+                item_path = os.path.join(path, item)
+                try:
+                    stat_info = os.stat(item_path)
+                    # Format: permissions, size, modified date, name
+                    perms = "d" if os.path.isdir(item_path) else "-"
+                    perms += "rwxrwxrwx" if os.access(item_path, os.R_OK | os.W_OK | os.X_OK) else "---------"
+                    size = stat_info.st_size
+                    mod_time = time.strftime("%b %d %H:%M", time.localtime(stat_info.st_mtime))
+                    name = f"{item}/" if os.path.isdir(item_path) else item
+                    output.append(f"{perms} {size:8d} {mod_time} {name}")
+                except Exception:
+                    output.append(f"??????????? ???????? {item}")
+            return "\n".join(output)
+        else:
+            output = []
+            for item in sorted(items):
+                item_path = os.path.join(path, item)
+                if os.path.isdir(item_path):
+                    output.append(f"{item}/")  # Directory indicator
+                else:
+                    output.append(item)
+            return "  ".join(output)
+    except PermissionError:
+        return f"ls: cannot open directory '{path}': Permission denied"
     except Exception as e:
         return f"ls: error: {str(e)}"
+
+def handle_pwd(current_dir):
+    """Handle pwd command."""
+    return current_dir
+
+def handle_echo(args):
+    """Handle echo command."""
+    return ' '.join(args)
+
+def handle_clear():
+    """Handle clear command."""
+    return '\n' * 50  # Simulate clearing the screen
+
+def handle_exit():
+    """Handle exit command."""
+    return "Exiting terminal..."
 
 def handle_cd(args, current_dir):
     """Handle cd command."""
@@ -235,22 +310,35 @@ def handle_mkdir(args, current_dir):
     if not args:
         return "mkdir: missing operand"
     
-    path = args[0]
+    # Check for -p flag
+    create_parents = '-p' in args
     
-    # Handle absolute and relative paths
-    if os.path.isabs(path):
-        new_dir = path
-    else:
-        new_dir = os.path.join(current_dir, path)
+    # Filter out options
+    paths = [arg for arg in args if not arg.startswith('-')]
     
-    # Create directory
-    try:
-        os.makedirs(new_dir, exist_ok='-p' in args)
-        return f"Directory created: {new_dir}"
-    except FileExistsError:
-        return f"mkdir: cannot create directory '{path}': File exists"
-    except Exception as e:
-        return f"mkdir: error: {str(e)}"
+    if not paths:
+        return "mkdir: missing operand"
+    
+    results = []
+    for path in paths:
+        # Handle absolute and relative paths
+        if os.path.isabs(path):
+            new_dir = path
+        else:
+            new_dir = os.path.join(current_dir, path)
+        
+        # Create directory
+        try:
+            os.makedirs(new_dir, exist_ok=create_parents)
+            results.append(f"Directory created: {new_dir}")
+        except FileExistsError:
+            results.append(f"mkdir: cannot create directory '{path}': File exists")
+        except PermissionError:
+            results.append(f"mkdir: cannot create directory '{path}': Permission denied")
+        except Exception as e:
+            results.append(f"mkdir: error creating '{path}': {str(e)}")
+    
+    return "\n".join(results)
 
 def handle_rmdir(args, current_dir):
     """Handle rmdir command."""
@@ -562,12 +650,15 @@ def handle_ps():
         for proc in psutil.process_iter(['pid', 'name', 'username', 'cpu_percent', 'memory_percent']):
             try:
                 pinfo = proc.info
-                processes.append(f"{pinfo['pid']}\t{pinfo['cpu_percent']:.1f}\t{pinfo['memory_percent']:.1f}\t{pinfo['username']}\t{pinfo['name']}")
+                processes.append(f"{pinfo['pid']}\t{pinfo['cpu_percent']:.1f}\t{pinfo['memory_percent']:.1f}\t{pinfo['username'] or 'N/A'}\t{pinfo['name']}")
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 pass
-        
+
+        if not processes:
+            return "No processes found"
+
         header = "PID\tCPU%\tMEM%\tUSER\tCOMMAND"
-        return header + "\n" + "\n".join(processes)
+        return header + "\n" + "\n".join(processes[:20])  # Limit to 20 processes
     except Exception as e:
         return f"ps: error: {str(e)}"
 
@@ -577,7 +668,7 @@ def handle_top():
         # Get system information
         cpu_percent = psutil.cpu_percent(interval=0.1)
         memory = psutil.virtual_memory()
-        
+
         # Get process information
         processes = []
         for proc in psutil.process_iter(['pid', 'name', 'username', 'cpu_percent', 'memory_percent']):
@@ -585,29 +676,29 @@ def handle_top():
                 pinfo = proc.info
                 processes.append((
                     pinfo['pid'],
-                    pinfo['cpu_percent'],
-                    pinfo['memory_percent'],
-                    pinfo['username'],
-                    pinfo['name']
+                    pinfo['cpu_percent'] or 0,
+                    pinfo['memory_percent'] or 0,
+                    pinfo['username'] or 'N/A',
+                    pinfo['name'] or 'unknown'
                 ))
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 pass
-        
+
         # Sort processes by CPU usage
         processes.sort(key=lambda x: x[1], reverse=True)
-        
+
         # Format output
         output = [
-            f"CPU Usage: {cpu_percent}%",
-            f"Memory: {memory.percent}% used ({memory.used // (1024*1024)} MB / {memory.total // (1024*1024)} MB)",
+            f"CPU Usage: {cpu_percent:.1f}%",
+            f"Memory: {memory.percent:.1f}% used ({memory.used // (1024*1024)} MB / {memory.total // (1024*1024)} MB)",
             "",
             "PID\tCPU%\tMEM%\tUSER\tCOMMAND"
         ]
-        
+
         # Add top 10 processes
         for pid, cpu, mem, user, name in processes[:10]:
             output.append(f"{pid}\t{cpu:.1f}\t{mem:.1f}\t{user}\t{name}")
-        
+
         return "\n".join(output)
     except Exception as e:
         return f"top: error: {str(e)}"
@@ -639,19 +730,26 @@ def handle_cpu_info():
             'cpu_percent': psutil.cpu_percent(interval=0.1, percpu=True),
             'cpu_freq': psutil.cpu_freq(),
         }
-        
+
         output = [
-            f"Physical cores: {cpu_info['physical_cores']}",
-            f"Total cores: {cpu_info['total_cores']}",
-            f"Current frequency: {cpu_info['cpu_freq'].current:.1f} MHz",
-            "CPU Usage Per Core:"
+            f"Physical cores: {cpu_info['physical_cores'] or 'N/A'}",
+            f"Total cores: {cpu_info['total_cores'] or 'N/A'}",
         ]
-        
-        for i, percent in enumerate(cpu_info['cpu_percent']):
-            output.append(f"  Core {i}: {percent}%")
-        
-        output.append(f"Total CPU Usage: {sum(cpu_info['cpu_percent']) / len(cpu_info['cpu_percent']):.1f}%")
-        
+
+        if cpu_info['cpu_freq']:
+            output.append(f"Current frequency: {cpu_info['cpu_freq'].current:.1f} MHz")
+
+        output.append("CPU Usage Per Core:")
+
+        if cpu_info['cpu_percent']:
+            for i, percent in enumerate(cpu_info['cpu_percent']):
+                output.append(f"  Core {i}: {percent:.1f}%")
+
+            avg_usage = sum(cpu_info['cpu_percent']) / len(cpu_info['cpu_percent'])
+            output.append(f"Total CPU Usage: {avg_usage:.1f}%")
+        else:
+            output.append("  Unable to get CPU usage information")
+
         return "\n".join(output)
     except Exception as e:
         return f"cpu: error: {str(e)}"
@@ -661,20 +759,24 @@ def handle_memory_info():
     try:
         memory = psutil.virtual_memory()
         swap = psutil.swap_memory()
-        
+
         output = [
             "Memory Information:",
             f"  Total: {memory.total // (1024*1024)} MB",
             f"  Available: {memory.available // (1024*1024)} MB",
-            f"  Used: {memory.used // (1024*1024)} MB ({memory.percent}%)",
+            f"  Used: {memory.used // (1024*1024)} MB ({memory.percent:.1f}%)",
             f"  Free: {memory.free // (1024*1024)} MB",
-            "",
-            "Swap Information:",
-            f"  Total: {swap.total // (1024*1024)} MB",
-            f"  Used: {swap.used // (1024*1024)} MB ({swap.percent}%)",
-            f"  Free: {swap.free // (1024*1024)} MB"
         ]
-        
+
+        if swap.total > 0:
+            output.extend([
+                "",
+                "Swap Information:",
+                f"  Total: {swap.total // (1024*1024)} MB",
+                f"  Used: {swap.used // (1024*1024)} MB ({swap.percent:.1f}%)",
+                f"  Free: {swap.free // (1024*1024)} MB"
+            ])
+
         return "\n".join(output)
     except Exception as e:
         return f"memory: error: {str(e)}"
@@ -686,12 +788,15 @@ def handle_process_list():
         for proc in psutil.process_iter(['pid', 'name', 'username', 'status']):
             try:
                 pinfo = proc.info
-                processes.append(f"{pinfo['pid']}\t{pinfo['status']}\t{pinfo['username']}\t{pinfo['name']}")
+                processes.append(f"{pinfo['pid']}\t{pinfo['status']}\t{pinfo['username'] or 'N/A'}\t{pinfo['name'] or 'unknown'}")
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 pass
-        
+
+        if not processes:
+            return "No processes found"
+
         header = "PID\tSTATUS\tUSER\tCOMMAND"
-        return header + "\n" + "\n".join(processes)
+        return header + "\n" + "\n".join(processes[:20])  # Limit to 20 processes
     except Exception as e:
         return f"processes: error: {str(e)}"
 
@@ -708,6 +813,11 @@ def get_autocomplete_suggestions(partial_command, current_dir):
     """
     suggestions = []
     
+    # Handle empty input
+    if not partial_command or partial_command.strip() == "":
+        # Return all available commands
+        return sorted(AVAILABLE_COMMANDS.keys())
+    
     # Split the command into parts
     parts = partial_command.split()
     
@@ -721,6 +831,11 @@ def get_autocomplete_suggestions(partial_command, current_dir):
         for cmd in AVAILABLE_COMMANDS:
             if cmd.startswith(cmd_prefix):
                 suggestions.append(cmd)
+        
+        # If no command matches, suggest similar commands
+        if not suggestions:
+            similar_cmds = get_close_matches(cmd_prefix, AVAILABLE_COMMANDS.keys(), n=5, cutoff=0.5)
+            suggestions.extend(similar_cmds)
     else:
         # Autocomplete command arguments (files and directories)
         cmd = parts[0].lower()
@@ -729,7 +844,23 @@ def get_autocomplete_suggestions(partial_command, current_dir):
         # Commands that accept file/directory arguments
         file_commands = ['ls', 'cd', 'cat', 'rm', 'cp', 'mv', 'mkdir', 'rmdir', 'touch', 'grep', 'find']
         
-        if cmd in file_commands and not last_part.startswith('-'):
+        # Commands that accept command flags
+        flag_commands = {
+            'ls': ['-a', '-l', '-la', '-al'],
+            'rm': ['-r', '-f', '-rf'],
+            'cp': ['-r', '-R'],
+            'grep': ['-i', '-r', '-v', '-n'],
+            'find': ['-name', '-type', '-size']
+        }
+        
+        # Suggest flags if the last part starts with a dash
+        if cmd in flag_commands and last_part.startswith('-'):
+            for flag in flag_commands[cmd]:
+                if flag.startswith(last_part):
+                    suggestions.append(flag)
+        
+        # Suggest files and directories
+        elif cmd in file_commands and not last_part.startswith('-'):
             # Handle absolute and relative paths
             if os.path.isabs(last_part):
                 base_dir = os.path.dirname(last_part) or '/'
@@ -752,7 +883,11 @@ def get_autocomplete_suggestions(partial_command, current_dir):
                             suggestions.append(os.path.join(os.path.dirname(last_part), item) + '/')
                         else:
                             suggestions.append(os.path.join(os.path.dirname(last_part), item))
+            except (FileNotFoundError, PermissionError, NotADirectoryError):
+                # Handle various directory access errors silently
+                pass
             except Exception:
+                # Catch any other errors silently
                 pass
     
     return sorted(suggestions)

@@ -171,13 +171,13 @@
         <!-- Left sidebar with quick commands -->
         <div id="quick-commands-panel" class="w-48 border-r border-terminal-border p-2 flex flex-col theme-transition">
             <h3 class="text-sm font-semibold mb-2">Quick Commands</h3>
-            <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="mkdir new_folder">Create Folder</button>
+            <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="mkdir test_folder">Create Folder</button>
             <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="ls">List Files</button>
             <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="clear">Clear Terminal</button>
             <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="pwd">Current Path</button>
-            <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="top -n 1">CPU Info</button>
-            <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="free -h">Memory Info</button>
-            <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="ps aux">List Processes</button>
+            <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="cpu">CPU Info</button>
+            <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="memory">Memory Info</button>
+            <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="processes">List Processes</button>
             <button class="quick-command mb-2 px-2 py-1 rounded hover:opacity-80" data-command="help">Help</button>
         </div>
         
@@ -231,6 +231,6 @@
     
     <!-- JavaScript -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <script src="/static/js/terminal.js"></script>
+    <script src="{{ url_for('static', filename='js/terminal.js') }}"></script>
 </body>
 </html>

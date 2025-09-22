@@ -3,9 +3,14 @@
  * Handles terminal UI, WebSocket communication, and user interactions
  */
 
-document.addEventListener('DOMContentLoaded', () => {
-    // Socket.IO connection
-    const socket = io();
+document.addEventListener('DOMContentLoaded', function() {
+    // Socket.IO connection - force polling to avoid WebSocket issues
+    const socket = io('/', {
+        transports: ['polling'],
+        upgrade: false,
+        timeout: 20000,
+        forceNew: true
+    });
     
     // Terminal state
     const state = {
@@ -95,25 +100,38 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
         
-        // Handle terminal input for each tab
-        document.addEventListener('keydown', handleTerminalInput);
+    // Handle terminal input for each tab
+    document.addEventListener('keydown', handleTerminalInput);
+
+    // Auto-focus the input when clicking anywhere in the terminal area
+    document.addEventListener('click', (e) => {
+        // If clicking in a terminal container but not on buttons/links, focus the input
+        if (e.target.closest('.terminal-container') && !e.target.closest('button') && !e.target.closest('a')) {
+            const terminalContainer = e.target.closest('.terminal-container');
+            const input = terminalContainer.querySelector('.terminal-input');
+            if (input) {
+                input.focus();
+            }
+        }
+    });
     }
     
     // Set up socket event handlers
     function setupSocketHandlers() {
         // Connection established
         socket.on('connect', () => {
-            console.log('Connected to server');
+            // Connection established silently
         });
-        
+
         // Receive command output
         socket.on('output', (data) => {
-            console.log('Received output:', data);  // Debug line
             if (data && data.output) {
-                appendOutput(state.currentTab, data.output);
+                // Use the tab_id from the data, or fall back to current tab
+                const tabId = data.tab_id || state.currentTab;
+                appendOutput(tabId, data.output);
             }
         });
-        
+
         // Directory change
         socket.on('directory_change', (data) => {
             if (data.tab_id && data.directory) {
@@ -121,30 +139,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 updatePrompt(data.tab_id);
             }
         });
-        
+
         // Autocomplete suggestions
         socket.on('autocomplete_suggestions', (data) => {
             if (data.tab_id && data.suggestions) {
                 showAutocompleteSuggestions(data.tab_id, data.suggestions);
             }
         });
-        
+
         // Command history
         socket.on('history', (data) => {
             if (data.tab_id && data.history) {
                 state.tabs[data.tab_id].inputHistory = data.history;
             }
         });
-        
+
         // System information updates
         socket.on('system_info', (data) => {
             updateSystemInfo(data);
         });
-        
+
         // Handle disconnection
         socket.on('disconnect', () => {
-            console.log('Disconnected from server');
-            appendOutput(state.currentTab, '\\nConnection to server lost. Attempting to reconnect...\\n', 'error');
+            appendOutput(state.currentTab, 'Connection to server lost. Please refresh the page.', 'error');
         });
     }
     
@@ -152,10 +169,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleTerminalInput(e) {
         const activeTab = state.currentTab;
         const inputElement = document.querySelector(`#terminal-${activeTab} .terminal-input`);
-        
+
         // Only process if an input is focused
-        if (document.activeElement !== inputElement) return;
-        
+        if (document.activeElement !== inputElement) {
+            return;
+        }
+
         // Handle special keys
         switch (e.key) {
             case 'Enter':
@@ -167,22 +186,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     state.tabs[activeTab].historyIndex = -1;
                 }
                 break;
-                
+
             case 'ArrowUp':
                 e.preventDefault();
                 navigateHistory(activeTab, 'up');
                 break;
-                
+
             case 'ArrowDown':
                 e.preventDefault();
                 navigateHistory(activeTab, 'down');
                 break;
-                
+
             case 'Tab':
                 e.preventDefault();
                 requestAutocomplete(activeTab, inputElement.value);
                 break;
-                
+
             case 'c':
                 // Ctrl+C to cancel current command
                 if (e.ctrlKey) {
@@ -191,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     appendOutput(activeTab, '^C', 'command');
                 }
                 break;
-                
+
             case 'l':
                 // Ctrl+L to clear screen
                 if (e.ctrlKey) {
@@ -206,7 +225,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function executeCommand(tabId, command) {
         // Add command to terminal output
         appendOutput(tabId, `$ ${command}`, 'command');
-        
+
         // Send command to server
         socket.emit('command', {
             command: command,
@@ -297,29 +316,33 @@ document.addEventListener('DOMContentLoaded', () => {
     // Append output to terminal
     function appendOutput(tabId, content, type = 'output') {
         const outputElement = document.querySelector(`#terminal-${tabId} .terminal-output`);
-        if (!outputElement) return;
-        
+        if (!outputElement) {
+            return;
+        }
+
         const outputLine = document.createElement('div');
         outputLine.className = `output-line ${type}`;
-        
-        // Apply typewriter animation for command outputs
-        if (type === 'output' && content.length < 1000) {
-            outputLine.classList.add('typing-animation');
-            setTimeout(() => {
-                outputLine.classList.remove('typing-animation');
-            }, 1000);
+
+        // Convert content to string and handle newlines
+        if (typeof content !== 'string') {
+            content = String(content);
         }
-        
-        // Handle ANSI color codes
-        content = parseAnsiCodes(content);
-        
+
+        // Replace newlines with <br> tags for HTML display
+        content = content.replace(/\n/g, '<br>');
+
+        // Ensure content is not empty and visible
+        if (!content || content.trim() === '') {
+            content = '<span style="color: #888;">(no output)</span>';
+        }
+
         outputLine.innerHTML = content;
         outputElement.appendChild(outputLine);
-        
+
         // Scroll to bottom
         outputElement.scrollTop = outputElement.scrollHeight;
     }
-    
+
     // Parse ANSI color codes
     function parseAnsiCodes(text) {
         // Replace ANSI color codes with spans
@@ -545,7 +568,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Save theme preference
         localStorage.setItem('terminal-theme', theme);
-        console.log(`Theme switched to: ${theme}`);
     }
     
     // Export logs
@@ -569,9 +591,7 @@ document.addEventListener('DOMContentLoaded', () => {
             form.submit();
             document.body.removeChild(form);
             
-            console.log(`Exporting logs in ${format} format`);
         } catch (error) {
-            console.error('Error exporting logs:', error);
             alert('Error exporting logs. Please try again.');
         }
     }

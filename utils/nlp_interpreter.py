@@ -232,44 +232,82 @@ def interpret(nl_command):
     Returns:
         list: A list of terminal commands
     """
+    # Handle empty or invalid input
+    if not nl_command or nl_command.strip() == "":
+        return ["help"]  # Return help command for empty input
+    
     # Clean up the command
     nl_command = nl_command.strip().lower()
     
     # Try to match the command against known patterns
     for pattern_dict in COMMAND_PATTERNS:
         for pattern in pattern_dict['patterns']:
-            match = re.match(pattern, nl_command)
-            if match:
-                # Extract matched groups
-                matches = match.groupdict()
-                
-                # Handle command generation
-                if 'command_generator' in pattern_dict:
-                    # Use the command generator function
-                    return pattern_dict['command_generator'](matches)
-                else:
-                    # Format the command template with the matched groups
-                    command = pattern_dict['command']
-                    for key, value in matches.items():
-                        if value:
-                            # Handle paths with spaces
-                            if ' ' in value and not (value.startswith('"') or value.startswith("'")):
-                                value = f'"{value}"'
-                            command = command.replace(f'{{{key}}}', value)
-                        else:
-                            # Handle optional parameters
-                            command = command.replace(f' {{{key}}}', '')
+            try:
+                match = re.match(pattern, nl_command)
+                if match:
+                    # Extract matched groups
+                    matches = match.groupdict()
                     
-                    return [command]
+                    # Handle command generation
+                    if 'command_generator' in pattern_dict:
+                        # Use the command generator function
+                        try:
+                            return pattern_dict['command_generator'](matches)
+                        except Exception as e:
+                            return [f"Error generating command: {str(e)}"]
+                    else:
+                        # Format the command template with the matched groups
+                        command = pattern_dict['command']
+                        for key, value in matches.items():
+                            if value:
+                                # Handle paths with spaces
+                                if ' ' in value and not (value.startswith('"') or value.startswith("'")):
+                                    value = f'"{value}"'
+                                command = command.replace(f'{{{key}}}', value)
+                            else:
+                                # Handle optional parameters
+                                command = command.replace(f' {{{key}}}', '')
+                        
+                        return [command]
+            except Exception as e:
+                # Skip this pattern if there's an error in regex matching
+                continue
     
     # If no pattern matches, try to handle as a direct command
     if nl_command.startswith('run ') or nl_command.startswith('execute '):
         direct_command = nl_command.split(' ', 1)[1]
         return [direct_command]
     
-    # If all else fails, return the original command as is
-    # This allows users to type actual commands and have them passed through
-    return [nl_command]
+    # Check for potentially dangerous commands
+    dangerous_phrases = ['delete all', 'remove all', 'format disk', 'wipe', 'destroy']
+    if any(phrase in nl_command for phrase in dangerous_phrases):
+        return ["echo 'This command was blocked for safety. Please use specific commands instead of general deletion/formatting commands.'"]
+    
+    # If all else fails, try to suggest a similar command
+    similar_examples = []
+    for pattern_dict in COMMAND_PATTERNS:
+        for pattern in pattern_dict['patterns']:
+            # Convert regex to a simpler form for comparison
+            simple_pattern = pattern.replace('(?:', '').replace(')?', '').replace('\\S+', 'X').replace('.+', 'X')
+            simple_pattern = re.sub(r'\(\?P<\w+>.*?\)', 'X', simple_pattern)
+            if len(simple_pattern) > 10:  # Only consider non-trivial patterns
+                similarity = 0
+                for word in nl_command.split():
+                    if word in simple_pattern:
+                        similarity += 1
+                if similarity > 0:
+                    # Get an example from the pattern
+                    example = pattern.replace('(?:', '').replace(')?', '')
+                    example = re.sub(r'\(\?P<(\w+)>.*?\)', r'\1', example)
+                    example = example.replace('\\S+', 'example').replace('.+', 'example')
+                    similar_examples.append(example)
+    
+    if similar_examples:
+        suggestions = ", ".join(similar_examples[:3])
+        return [f"echo 'Command not understood. Try something like: {suggestions}'"]
+    
+    # If no suggestions, return a generic message
+    return ["echo 'Command not understood. Type \"help\" to see available commands or use \"!help\" for natural language examples.'"]
 
 def suggest_command(partial_command):
     """
@@ -283,32 +321,66 @@ def suggest_command(partial_command):
     """
     suggestions = []
     
-    # Create a list of example commands from the patterns
-    example_commands = []
-    for pattern_dict in COMMAND_PATTERNS:
-        for pattern in pattern_dict['patterns']:
-            # Convert regex pattern to an example command
-            example = pattern
-            
-            # Replace common regex patterns with examples
-            example = re.sub(r'\(\?:.*?\)', '', example)  # Remove non-capturing groups
-            example = re.sub(r'\(\?P<(\w+)>\\S\+\)', r'example_\1', example)  # Replace named capture groups
-            example = re.sub(r'\(\?P<(\w+)>.+\)', r'example_\1', example)  # Replace named capture groups with .+
-            example = re.sub(r'\\S\+', 'example', example)  # Replace \S+
-            example = re.sub(r'\?', '', example)  # Remove optional markers
-            example = re.sub(r'\|', '', example)  # Remove alternation
-            example = re.sub(r'[\[\]\(\)\{\}\.\+\*\^\$]', '', example)  # Remove other regex special chars
-            
-            # Clean up the example
-            example = re.sub(r'\s+', ' ', example).strip()
-            if example:
-                example_commands.append(example)
+    # Handle empty input
+    if not partial_command or partial_command.strip() == "":
+        # Return common examples for empty input
+        return [
+            "list files",
+            "create file example.txt",
+            "show cpu usage",
+            "find files named example.txt",
+            "move file.txt to folder/"
+        ]
     
-    # Find close matches
-    if partial_command:
-        suggestions = get_close_matches(partial_command, example_commands, n=5, cutoff=0.3)
-    else:
-        # If no partial command, return some common examples
+    try:
+        # Create a list of example commands from the patterns
+        example_commands = []
+        for pattern_dict in COMMAND_PATTERNS:
+            for pattern in pattern_dict['patterns']:
+                try:
+                    # Convert regex pattern to an example command
+                    example = pattern
+                    
+                    # Replace common regex patterns with examples
+                    example = re.sub(r'\(\?:.*?\)', '', example)  # Remove non-capturing groups
+                    example = re.sub(r'\(\?P<(\w+)>\\S\+\)', r'example_\1', example)  # Replace named capture groups
+                    example = re.sub(r'\(\?P<(\w+)>.+\)', r'example_\1', example)  # Replace named capture groups with .+
+                    example = re.sub(r'\\S\+', 'example', example)  # Replace \S+
+                    example = re.sub(r'\?', '', example)  # Remove optional markers
+                    example = re.sub(r'\|', '', example)  # Remove alternation
+                    example = re.sub(r'[\[\]\(\)\{\}\.\+\*\^\$]', '', example)  # Remove other regex special chars
+                    
+                    # Clean up the example
+                    example = re.sub(r'\s+', ' ', example).strip()
+                    if example:
+                        example_commands.append(example)
+                except Exception:
+                    # Skip this pattern if there's an error in regex processing
+                    continue
+        
+        # Find close matches
+        if partial_command:
+            # Try to find exact prefix matches first
+            prefix_matches = [cmd for cmd in example_commands if cmd.startswith(partial_command.lower())]
+            if prefix_matches:
+                suggestions.extend(prefix_matches[:5])
+            
+            # Then try fuzzy matching
+            if len(suggestions) < 5:
+                fuzzy_matches = get_close_matches(partial_command, example_commands, n=(5-len(suggestions)), cutoff=0.3)
+                suggestions.extend([m for m in fuzzy_matches if m not in suggestions])
+        
+        # If no suggestions found, return common examples
+        if not suggestions:
+            suggestions = [
+                "list files",
+                "create file example.txt",
+                "show cpu usage",
+                "find files named example.txt",
+                "move file.txt to folder/"
+            ]
+    except Exception as e:
+        # In case of any error, return basic suggestions
         suggestions = [
             "list files",
             "create file example.txt",
@@ -349,3 +421,42 @@ def get_help_examples():
     ]
     
     return examples
+
+def handle_error(error_message):
+    """
+    Handle errors in NLP interpretation.
+    
+    Args:
+        error_message (str): The error message
+        
+    Returns:
+        list: A list of commands to execute (usually just an echo command)
+    """
+    return [f"echo 'Error in natural language processing: {error_message}'"]
+
+def is_safe_command(command):
+    """
+    Check if a command is safe to execute.
+    
+    Args:
+        command (str): The command to check
+        
+    Returns:
+        bool: True if the command is safe, False otherwise
+    """
+    # List of potentially dangerous commands or patterns
+    dangerous_patterns = [
+        r'rm\s+-rf\s+[/]',  # rm -rf / or similar
+        r'dd\s+if=',        # dd commands
+        r'mkfs',            # filesystem formatting
+        r'format',          # formatting
+        r'sudo',            # sudo commands
+        r'chmod\s+777',     # overly permissive chmod
+    ]
+    
+    # Check if the command matches any dangerous pattern
+    for pattern in dangerous_patterns:
+        if re.search(pattern, command, re.IGNORECASE):
+            return False
+    
+    return True
